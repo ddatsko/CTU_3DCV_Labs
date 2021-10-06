@@ -103,7 +103,7 @@ def make_image_camera_6():
 
 
 def main():
-    make_image_camera_6()
+    make_image_camera_4()
 
 
 if __name__ == "__main__":
