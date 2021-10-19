@@ -20,10 +20,11 @@ def main():
     plt.scatter(x[0], x[1], color='black', marker='.')
 
     fitted_line = np.polyfit(x[0], x[1], 1)
+    plot_line(np.array([-10, 3, 1200]), color='black')
     plot_line(np.array([-fitted_line[0], 1, -fitted_line[1]]), color='green')
     plot_line(ransac(x, 7))
     plot_line(ransac_plus_line_fit(x, 7), color='red')
-    plot_line(mlesac(x, 7), color='brown')
+    plot_line(mlesac(x, 7), color='cyan')
     plot_line(mlesac_plus_line_fit(x, 7), color='yellow')
 
     # plt.plot(ransac_line[0], ransac_line[1])
