@@ -26,10 +26,10 @@ def calculate_support(u1: np.array, u2: np.array, correspondences: Mapping,  R: 
     inliers = []
     support = 0
     for i in correspondences.keys():
-        line = u2[:, correspondences[i]].T @ E
+        line = E @ u1[:, i].T
         line /= (line[0]**2 + line[1]**2)**0.5
 
-        distance = line @ u1[:, i]
+        distance = line @ u2[:, correspondences[i]]
         # print(abs(distance))
         if abs(distance) < threshold:
             support += 1
@@ -53,12 +53,13 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
     # points1 /= points1[2]
     # points2 /= points2[2]
 
-    k = 20
+    k = 100
     n = 0
     best_support = 0
     best_R = None
     best_t = None
     best_inliers = []
+    best_chosen_points = None
 
     while (n := n + 1) < k:
         if n % 20 == 0:
@@ -92,8 +93,9 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                 else:
                     support, inliers = calculate_support(points1, points2, correspondences, R_21, t_21, K, thresh)
                     if support > best_support:
+                        best_chosen_points = random_points
                         best_support = support
                         best_R = R_21
                         best_t = t_21
                         best_inliers = inliers
-    return best_support, best_inliers, best_R, best_t
+    return best_support, best_inliers, best_R, best_t, best_chosen_points
