@@ -16,8 +16,8 @@ def plot_line(line, color: str or tuple = 'blue'):
 
 def main():
     if len(sys.argv) < 2:
-        image1_index = '08'
-        image2_index = '12'
+        image1_index = '02'
+        image2_index = '03'
     else:
         image1_index = sys.argv[1].zfill(2)
         image2_index = sys.argv[2].zfill(2)
@@ -29,10 +29,11 @@ def main():
     correspondences = get_points_correspondences(f'data/scene_1/corresp/m_{image1_index}_{image2_index}.txt')
 
     # Find the cameras relative rotation and translation
-    support, inliers, R, T, chosen = ransac_epipolar(image1_points, image2_points, correspondences, k, 0.001, 0.99)
+    support, inliers, R, T, chosen = ransac_epipolar(image1_points, image2_points, correspondences, k, 5, 0.99)
 
     plt.imshow(plt.imread(f'data/scene_1/images/{image2_index}.jpg'))
-
+    show_inliers(image1_points, image2_points, inliers, correspondences)
+    plt.show()
 
     image1_points = e2p(image1_points)
     image2_points = e2p(image2_points)
@@ -40,20 +41,22 @@ def main():
     # show lines that are a mapping of second point images on the first image
     k_inv = np.linalg.inv(k)
     F = k_inv.T @ cross_product_matrix(-T) @ R @ k_inv
+
+    plt.imshow(plt.imread(f'data/scene_1/images/{image2_index}.jpg'))
     points_ind = 0
     for i in chosen:
         plt.plot([image2_points[0, correspondences[i]]], [image2_points[1, correspondences[i]]], color=LINES_COLORS[points_ind], marker='X')
         plot_line(F @ image1_points[:, i].reshape((3, 1)), color=LINES_COLORS[points_ind])
         points_ind += 1
-
-    # print(len(correspondences.keys()))
-    # print(len(inliers))
-    show_inliers(image1_points, image2_points, inliers, correspondences)
-
-
     plt.show()
 
-
+    plt.imshow(plt.imread(f'data/scene_1/images/{image1_index}.jpg'))
+    points_ind = 0
+    for i in chosen:
+        plt.plot([image1_points[0, i]], [image1_points[1, i]], color=LINES_COLORS[points_ind], marker='X')
+        plot_line(F.T @ image2_points[:, correspondences[i]].reshape((3, 1)), color=LINES_COLORS[points_ind])
+        points_ind += 1
+    plt.show()
 
 
 

@@ -21,7 +21,9 @@ def triangulate(u1: np.array, u2: np.array, t: np.array, R: np.array) -> (np.arr
 
 def calculate_support(u1: np.array, u2: np.array, correspondences: Mapping,  R: np.array, t: np.array, K: np.array, threshold: float):
     E = (-cross_product_matrix(t) @ R)
+    k_inv = np.linalg.inv(K)
 
+    E = k_inv.T @ E @ k_inv
     # TODO: try to rewrite this in pure numpy with no loops
     inliers = []
     support = 0
@@ -30,6 +32,7 @@ def calculate_support(u1: np.array, u2: np.array, correspondences: Mapping,  R: 
         line /= (line[0]**2 + line[1]**2)**0.5
 
         distance = line @ u2[:, correspondences[i]]
+        # print(distance)
         # print(abs(distance))
         if abs(distance) < threshold:
             support += 1
@@ -38,15 +41,15 @@ def calculate_support(u1: np.array, u2: np.array, correspondences: Mapping,  R: 
     return support, inliers
 
 
-
-
-
-
 def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mapping, K: np.array, thresh: float = 3,
                     p: float = 0.99):
 
     points1 = e2p(points1)
     points2 = e2p(points2)
+
+    points1_original = points1
+    points2_original = points2
+
     points1 = np.linalg.inv(K) @ points1
     points2 = np.linalg.inv(K) @ points2
 
@@ -91,7 +94,7 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                     if c1_coords[2] < 0 or c2_coords[2] < 0:
                         break
                 else:
-                    support, inliers = calculate_support(points1, points2, correspondences, R_21, t_21, K, thresh)
+                    support, inliers = calculate_support(points1_original, points2_original, correspondences, R_21, t_21, K, thresh)
                     if support > best_support:
                         best_chosen_points = random_points
                         best_support = support
