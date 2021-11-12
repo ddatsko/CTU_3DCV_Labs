@@ -11,13 +11,13 @@ LINES_COLORS = ['red', 'green', 'blue', 'yellow', 'brown']
 def plot_line(line, color: str or tuple = 'blue'):
     line /= (line[0] ** 2 + line[1] ** 2) ** 0.5
     ax = np.linspace(plt.xlim()[0], plt.xlim()[1], 100)
-    plt.plot(ax, list(map(lambda x: (-line[2] - line[0] * x) / line[1] if min(plt.ylim()) < (-line[2] - line[0] * x) / line[1] < max(plt.ylim()) else None, ax)), color=color)
+    plt.plot(ax, list(map(lambda x: (-line[2] - line[0] * x) / line[1] if min(plt.ylim()) < (-line[2] - line[0] * x) / line[1] < max(plt.ylim()) else None, ax)), color=color, )
 
 
 def main():
     if len(sys.argv) < 2:
-        image1_index = '02'
-        image2_index = '03'
+        image1_index = '07'
+        image2_index = '11'
     else:
         image1_index = sys.argv[1].zfill(2)
         image2_index = sys.argv[2].zfill(2)
@@ -29,10 +29,15 @@ def main():
     correspondences = get_points_correspondences(f'data/scene_1/corresp/m_{image1_index}_{image2_index}.txt')
 
     # Find the cameras relative rotation and translation
-    support, inliers, R, T, chosen = ransac_epipolar(image1_points, image2_points, correspondences, k, 5, 0.99)
+    support, inliers, R, T, chosen = ransac_epipolar(image1_points, image2_points, correspondences, k, 2, 0.9999)
+    print(R, T)
+    print(support)
+    print(image1_points[:, [i for i in chosen]])
+    print(image2_points[:, [correspondences[i] for i in chosen]])
 
     plt.imshow(plt.imread(f'data/scene_1/images/{image2_index}.jpg'))
     show_inliers(image1_points, image2_points, inliers, correspondences)
+
     plt.show()
 
     image1_points = e2p(image1_points)

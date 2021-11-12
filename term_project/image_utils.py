@@ -75,9 +75,9 @@ def show_inliers(points1: np.array, points2: np.array, indexes, correspondences:
     for i in correspondences.keys():
         if i in inliers:
             plt.plot([points1[0][i], points2[0][correspondences[i]]], [points1[1][i], points2[1][correspondences[i]]], color=color)
-        # else:
-        #     plt.plot([points1[0][i], points2[0][correspondences[i]]], [points1[1][i], points2[1][correspondences[i]]],
-        #              color='grey')
+        else:
+            plt.plot([points1[0][i], points2[0][correspondences[i]]], [points1[1][i], points2[1][correspondences[i]]],
+                     color='black', linewidth=0.3)
 
 def get_k_from_file(filename: str='data/scene_1/K.txt') -> np.array:
     k = np.fromfile(filename, dtype=np.float64, sep=' \n').reshape((3, 3))
