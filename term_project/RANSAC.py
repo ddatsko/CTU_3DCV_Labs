@@ -3,8 +3,71 @@ from typing import Mapping
 import random
 from image_utils import p5gb
 from toolbox import e2p, p2e
+import scipy.optimize
 
 A_B_COMBINATIONS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+
+
+def R_from_rodrigues(a: np.array):
+    # Using this formula: https://i.stack.imgur.com/a6wRa.png
+    alpha = np.linalg.norm(a)
+    a = a / alpha
+
+    aa_t = a.reshape((3, 1)) @ a.reshape((1, 3))
+    A = cross_product_matrix(a)
+
+    R = np.identity(3) * np.cos(alpha) + aa_t * (1 - np.cos(alpha)) + A * np.sin(alpha)
+
+    return R
+
+
+def jacobian(F, x1, x2) -> np.array:
+    return np.vstack([(F.T @ x1)[:-1], (F @ x2)[:-1]])
+    # return np.vstack([(F.T @ x2)[:-1], (F @ x1)[:-1]])
+
+
+def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.array):
+    k_inv = np.linalg.inv(K)
+    min_error = float('inf')
+
+    def epsilon(x: np.array, F: np.array, y: np.array):
+        # return np.array([y[:, i].T @ F @ x[:, i] for i in range(x.shape[1])])
+        return np.einsum('ij,ij->i', y.T, (F @ x).T)
+
+    def error(x):
+        # Calculate values from 6 parameters
+        if np.linalg.norm(x[:3]) == 0:
+            d_R = np.identity(3)
+        else:
+            d_R = R_from_rodrigues(np.array(x[:3]))
+
+        d_t = np.array(x[3:])
+
+        # Define new values
+        new_R = R @ d_R
+        new_t = t + d_t
+
+        F = k_inv.T @ (cross_product_matrix(-new_t) @ new_R) @ k_inv
+
+        # # Calculate error with new values
+        jacobians = jacobian(F, u1, u2).T
+        JJ_T = 1 / np.einsum('ij,ij->i', jacobians, jacobians)
+
+        eps = epsilon(u1, F, u2)
+        errors = JJ_T * (eps ** 2)
+
+        res = np.sum(errors)
+
+        # Print the output about new min error function value
+        nonlocal min_error
+        if res < min_error:
+            print(f"Optimized min error to {res}")
+            min_error = res
+
+        return res
+
+    argmin_x = scipy.optimize.minimize(error, np.array([0, 0, 0, 0, 0, 0])).x
+    return R @ R_from_rodrigues(np.array(argmin_x[:3])), t + np.array(argmin_x[3:])
 
 
 def cross_product_matrix(v: np.array):
@@ -65,7 +128,6 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
     points1 = np.linalg.inv(K) @ points1
     points2 = np.linalg.inv(K) @ points2
 
-
     k = float('inf')
     n = 0
     best_support = 5
@@ -111,5 +173,14 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                         best_t = t_21
                         best_inliers = inliers
         if np.log(1 - (best_support / points1.shape[1]) ** 5) != 0:
-            k = np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5)
+            k = min(np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5), 10000)
+
+    k_inv = np.linalg.inv(K)
+
+    # print(f"R, t before optimization: {best_R}\n{best_t}")
+
+    best_R, best_t = fit_E_matrix(points1_original[:, sorted(best_inliers)],
+                 points2_original[:, [correspondences[i] for i in sorted(best_inliers)]], best_R, best_t, K)
+    # print(f"R, t after optimization: {best_R}\n{best_t}")
+
     return best_support, best_inliers, best_R, best_t, best_chosen_points

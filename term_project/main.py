@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 from image_utils import get_points_correspondences, read_points, get_k_from_file, show_inliers
-from RANSAC import ransac_epipolar, cross_product_matrix
+from RANSAC import ransac_epipolar, cross_product_matrix, R_from_rodrigues
 from toolbox import e2p
 
 LINES_COLORS = ['red', 'green', 'blue', 'yellow', 'brown']
@@ -29,11 +29,11 @@ def main():
     correspondences = get_points_correspondences(f'data/scene_1/corresp/m_{image1_index}_{image2_index}.txt')
 
     # Find the cameras relative rotation and translation
-    support, inliers, R, T, chosen = ransac_epipolar(image1_points, image2_points, correspondences, k, 2, 0.9999)
-    print(R, T)
-    print(support)
-    print(image1_points[:, [i for i in chosen]])
-    print(image2_points[:, [correspondences[i] for i in chosen]])
+    support, inliers, R, T, chosen = ransac_epipolar(image1_points, image2_points, correspondences, k, 2.5, 0.9999)
+    # print(R, T)
+    # print(support)
+    # print(image1_points[:, [i for i in chosen]])
+    # print(image2_points[:, [correspondences[i] for i in chosen]])
 
     plt.imshow(plt.imread(f'data/scene_1/images/{image2_index}.jpg'))
     show_inliers(image1_points, image2_points, inliers, correspondences)
