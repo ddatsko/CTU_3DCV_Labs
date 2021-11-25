@@ -1,29 +1,15 @@
 import numpy as np
 from typing import Mapping
 import random
-from image_utils import p5gb
-from toolbox import e2p, p2e
+from utils import p5gb
+from toolbox import *
 import scipy.optimize
 
 A_B_COMBINATIONS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
 
 
-def R_from_rodrigues(a: np.array):
-    # Using this formula: https://i.stack.imgur.com/a6wRa.png
-    alpha = np.linalg.norm(a)
-    a = a / alpha
-
-    aa_t = a.reshape((3, 1)) @ a.reshape((1, 3))
-    A = cross_product_matrix(a)
-
-    R = np.identity(3) * np.cos(alpha) + aa_t * (1 - np.cos(alpha)) + A * np.sin(alpha)
-
-    return R
-
-
-def jacobian(F, x1, x2) -> np.array:
+def sampson_approx_jacobian(F, x1, x2) -> np.array:
     return np.vstack([(F.T @ x1)[:-1], (F @ x2)[:-1]])
-    # return np.vstack([(F.T @ x2)[:-1], (F @ x1)[:-1]])
 
 
 def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.array):
@@ -50,7 +36,7 @@ def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.arr
         F = k_inv.T @ (cross_product_matrix(-new_t) @ new_R) @ k_inv
 
         # # Calculate error with new values
-        jacobians = jacobian(F, u1, u2).T
+        jacobians = sampson_approx_jacobian(F, u1, u2).T
         JJ_T = 1 / np.einsum('ij,ij->i', jacobians, jacobians)
 
         eps = epsilon(u1, F, u2)
@@ -68,29 +54,6 @@ def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.arr
 
     argmin_x = scipy.optimize.minimize(error, np.array([0, 0, 0, 0, 0, 0])).x
     return R @ R_from_rodrigues(np.array(argmin_x[:3])), t + np.array(argmin_x[3:])
-
-
-def cross_product_matrix(v: np.array):
-    return np.array([[0, -v[2], v[1]],
-                     [v[2], 0, -v[0]],
-                     [-v[1], v[0], 0]])
-
-
-def triangulate(u1: np.array, u2: np.array, t: np.array, R: np.array) -> (np.array, np.array):
-    P_2 = np.append(R, -R @ t.reshape((3, 1)), axis=1)
-    P_1 = np.append(np.identity(3), np.array([[0], [0], [0]]), axis=1)
-
-    D = np.array([u1[0] * P_1[2] - P_1[0],
-                  u1[1] * P_1[2] - P_1[1],
-                  u2[0] * P_2[2] - P_2[0],
-                  u2[1] * P_2[2] - P_2[1]])
-
-    u, o, v_t = np.linalg.svd(D)
-
-    X = v_t.T[:, -1]
-    X /= X[-1]
-
-    return P_1 @ X, P_2 @ X
 
 
 def calculate_support(u1: np.array, u2: np.array, correspondences: Mapping, E: np.array, K: np.array, threshold: float):
@@ -167,7 +130,6 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                         if c1_coords[2] < 0 or c2_coords[2] < 0:
                             break
                     else:
-                        best_chosen_points = random_points
                         best_support = support
                         best_R = R_21
                         best_t = t_21
@@ -175,12 +137,8 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
         if np.log(1 - (best_support / points1.shape[1]) ** 5) != 0:
             k = min(np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5), 10000)
 
-    k_inv = np.linalg.inv(K)
-
-    # print(f"R, t before optimization: {best_R}\n{best_t}")
-
     best_R, best_t = fit_E_matrix(points1_original[:, sorted(best_inliers)],
-                 points2_original[:, [correspondences[i] for i in sorted(best_inliers)]], best_R, best_t, K)
-    # print(f"R, t after optimization: {best_R}\n{best_t}")
+                                  points2_original[:, [correspondences[i] for i in sorted(best_inliers)]], best_R,
+                                  best_t, K)
 
-    return best_support, best_inliers, best_R, best_t, best_chosen_points
+    return best_support, best_inliers, best_R, best_t

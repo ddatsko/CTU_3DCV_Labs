@@ -70,15 +70,26 @@ def read_points(file_path: str) -> np.array:
     return np.reshape(file_data, newshape=(int(file_data.shape[0] / 2), 2)).T
 
 
-def show_inliers(points1: np.array, points2: np.array, indexes, correspondences: Mapping, color: str='green'):
+def show_inliers(points1: np.array, points2: np.array, indexes, correspondences: Mapping,
+                 color: tuple or str = 'green'):
     inliers = set(indexes)
     for i in correspondences.keys():
         if i in inliers:
-            plt.plot([points1[0][i], points2[0][correspondences[i]]], [points1[1][i], points2[1][correspondences[i]]], color=color)
+            plt.plot([points1[0][i], points2[0][correspondences[i]]], [points1[1][i], points2[1][correspondences[i]]],
+                     color=color)
         else:
             plt.plot([points1[0][i], points2[0][correspondences[i]]], [points1[1][i], points2[1][correspondences[i]]],
                      color='black', linewidth=0.3)
 
-def get_k_from_file(filename: str='data/scene_1/K.txt') -> np.array:
+
+def get_k_from_file(filename: str = 'data/scene_1/K.txt') -> np.array:
     k = np.fromfile(filename, dtype=np.float64, sep=' \n').reshape((3, 3))
     return k
+
+
+def plot_line(line, color: str or tuple = 'blue'):
+    line /= (line[0] ** 2 + line[1] ** 2) ** 0.5
+    ax = np.linspace(plt.xlim()[0], plt.xlim()[1], 100)
+    plt.plot(ax, list(
+        map(lambda x: (-line[2] - line[0] * x) / line[1] if min(plt.ylim()) < (-line[2] - line[0] * x) / line[1] < max(
+            plt.ylim()) else None, ax)), color=color, )
