@@ -16,8 +16,24 @@ def cross_product_matrix(v: np.array):
 
 
 def triangulate(u1: np.array, u2: np.array, t: np.array, R: np.array) -> (np.array, np.array):
-    P_2 = np.append(R, -R @ t.reshape((3, 1)), axis=1)
+    """
+    Returns: X in first camera's coordinate system and in the second camera's one
+    """
+    P_2 = np.append(R, t.reshape((3, 1)), axis=1)
     P_1 = np.append(np.identity(3), np.array([[0], [0], [0]]), axis=1)
+
+    X = triangulate_to_3d_hom(u1, u2, t, R)
+    return P_1 @ X, P_2 @ X
+
+
+def triangulate_to_3d_hom(u1: np.array, u2: np.array, t: np.array, R: np.array, K: np.array = np.identity(3)) -> np.array:
+    """
+    Returns: X in world coordinates
+    """
+    R = K @ R
+    t = K @ t
+    P_2 = np.append(R, t.reshape((3, 1)), axis=1)
+    P_1 = np.append(K @ np.identity(3), np.array([[0], [0], [0]]), axis=1)
 
     D = np.array([u1[0] * P_1[2] - P_1[0],
                   u1[1] * P_1[2] - P_1[1],
@@ -28,8 +44,15 @@ def triangulate(u1: np.array, u2: np.array, t: np.array, R: np.array) -> (np.arr
 
     X = v_t.T[:, -1]
     X /= X[-1]
+    return X
 
-    return P_1 @ X, P_2 @ X
+
+def triangulate_to_3d(u1: np.array, u2: np.array, t: np.array, R: np.array, K: np.array) -> np.array:
+    """
+    Returns: X in world coordinates
+    """
+    # print(triangulate_to_3d_hom(u1, u2, t, R))(u1, u2, t, R))
+    return triangulate_to_3d_hom(u1, u2, t, R, K)[:-1]
 
 
 def R_from_rodrigues(a: np.array):
@@ -43,3 +66,7 @@ def R_from_rodrigues(a: np.array):
     R = np.identity(3) * np.cos(alpha) + aa_t * (1 - np.cos(alpha)) + A * np.sin(alpha)
 
     return R
+
+
+def Rt2P(R: np.array, t: np.array) -> np.array:
+    return np.append(R, t.reshape((3, 1)), axis=1)

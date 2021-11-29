@@ -1,9 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-from utils import get_points_correspondences, read_points, get_k_from_file, show_inliers
-from RANSAC_epipolar import ransac_epipolar, cross_product_matrix, R_from_rodrigues
+from utils import get_points_correspondences, read_points, get_k_from_file
+from RANSAC_epipolar import ransac_epipolar, cross_product_matrix
 from corresp import Corresp
+from toolbox import triangulate_to_3d
+from RANSAC_P3P import ransac_p3p
+import ge
 
 
 def main():
@@ -43,14 +46,69 @@ def main():
     k = get_k_from_file()
 
     # Find the cameras relative rotation and translation
-    print(images_interesting_points[image1_index])
-    initial_correspondences = get_points_correspondences(f'data/scene_1/corresp/m_{str(image1_index + 1).zfill(2)}_{str(image2_index + 1).zfill(2)}.txt')
-    support, inliers, R, T = ransac_epipolar(images_interesting_points[image1_index],
+    initial_correspondences = c.get_m(image1_index, image2_index)
+    correspondences_dict = {initial_correspondences[0][i]: initial_correspondences[1][i] for i in range(len(initial_correspondences[0]))}
+
+    support, inliers, R, T, E = ransac_epipolar(images_interesting_points[image1_index],
                                              images_interesting_points[image2_index],
-                                             initial_correspondences,
+                                             correspondences_dict,
                                              k,
-                                             2.5,
+                                             1,
                                              0.9999)
+
+
+
+    # A dict to store 3d point coordinates by their id
+    points_by_id = {}
+
+    # Find the indices of inliers in the correspondences array to feed them to the c object
+    # Doing in O(n) time complexity
+    correspondences_indices = []
+    it = 0
+    for i in inliers:
+        while initial_correspondences[0][it] != i:
+            it += 1
+        correspondences_indices.append(it)
+
+    initial_points_indices = np.array(list(range(len(correspondences_indices))))
+
+    j = 0
+    for i in correspondences_indices:
+        points_by_id[j] = triangulate_to_3d(images_interesting_points[image1_index][:, initial_correspondences[0][i]],
+                                            images_interesting_points[image2_index][:, initial_correspondences[1][i]],
+                                            T,
+                                            R, k)
+        j += 1
+
+
+
+    cloud = np.array(list(points_by_id.values()), dtype=np.float64)
+    # colors = np.random.rand(*cloud.shape)
+    colors = np.zeros(cloud.shape)
+
+    C = -R.T @ T
+
+    print(R)
+    print(T)
+    print(C)
+
+    cloud = np.vstack([cloud, C,  np.array([0, 0, 0])]).T
+    colors = np.vstack([colors, np.array([1, 1, 1]), np.array([1, 1, 1])]).T
+
+    print(len(inliers))
+
+    c.start(image1_index, image2_index, correspondences_indices, initial_points_indices)
+
+    ig = c.get_green_cameras()
+
+    camera_index_to_append = ig[0][np.argmax(ig[1])]
+    print(f"Adding camera {camera_index_to_append}")
+
+    X, u, _ = c.get_Xu(camera_index_to_append)
+
+    ransac_p3p(points_by_id, X, images_interesting_points[camera_index_to_append], u, k, 2, 0.99)
+
+
 
 
 if __name__ == '__main__':

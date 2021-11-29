@@ -93,3 +93,5 @@ def plot_line(line, color: str or tuple = 'blue'):
     plt.plot(ax, list(
         map(lambda x: (-line[2] - line[0] * x) / line[1] if min(plt.ylim()) < (-line[2] - line[0] * x) / line[1] < max(
             plt.ylim()) else None, ax)), color=color, )
+
+

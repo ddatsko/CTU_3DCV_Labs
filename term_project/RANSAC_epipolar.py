@@ -44,7 +44,7 @@ def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.arr
 
         res = np.sum(errors)
 
-        # Print the output about new min error function value
+        # Print the output about new min error function value for debug
         nonlocal min_error
         if res < min_error:
             print(f"Optimized min error to {res}")
@@ -96,6 +96,7 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
     best_support = 5
     best_R = None
     best_t = None
+    best_E = None
     best_inliers = []
     best_chosen_points = None
 
@@ -133,6 +134,7 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                         best_support = support
                         best_R = R_21
                         best_t = t_21
+                        best_E = E
                         best_inliers = inliers
         if np.log(1 - (best_support / points1.shape[1]) ** 5) != 0:
             k = min(np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5), 10000)
@@ -141,4 +143,4 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                                   points2_original[:, [correspondences[i] for i in sorted(best_inliers)]], best_R,
                                   best_t, K)
 
-    return best_support, best_inliers, best_R, best_t
+    return best_support, best_inliers, best_R, best_t, best_E
