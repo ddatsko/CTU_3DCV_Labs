@@ -4,9 +4,13 @@ import sys
 from utils import get_points_correspondences, read_points, get_k_from_file
 from RANSAC_epipolar import ransac_epipolar, cross_product_matrix
 from corresp import Corresp
-from toolbox import triangulate_to_3d
+from toolbox import triangulate_to_3d, reprojection_error, e2p, p2e, Rtk2P
 from RANSAC_P3P import ransac_p3p
 import ge
+from typing import List
+
+
+POINT_REPROJECTION_ERROR_FOR_ADDITION = 4   # in pixels
 
 
 def main():
@@ -31,8 +35,9 @@ def main():
 
     c = Corresp(cameras_num)
 
-    cameras_R = [None] * cameras_num
-    cameras_t = [None] * cameras_num
+    # Arrays to store cameras configuration
+    cameras_R: List[np.array or None] = [None] * cameras_num
+    cameras_t: List[np.array or None] = [None] * cameras_num
 
     # Append a None at the beginning of the array to make 1-indexation easier
     images_interesting_points = []
@@ -53,10 +58,14 @@ def main():
                                              images_interesting_points[image2_index],
                                              correspondences_dict,
                                              k,
-                                             1,
+                                             2,
                                              0.9999)
 
-
+    # Update the values in the array
+    cameras_t[image1_index] = np.zeros((3, 1))
+    cameras_R[image1_index] = np.identity(3)
+    cameras_t[image2_index] = T
+    cameras_R[image2_index] = R
 
     # A dict to store 3d point coordinates by their id
     points_by_id = {}
@@ -71,42 +80,112 @@ def main():
         correspondences_indices.append(it)
 
     initial_points_indices = np.array(list(range(len(correspondences_indices))))
+    points_max_index = len(correspondences_indices) + 1
 
+    # Triangulate all the inliers correspondences
     j = 0
+    P_1 = Rtk2P(cameras_R[image1_index], cameras_t[image1_index], k)
+    P_2 = Rtk2P(cameras_R[image2_index], cameras_t[image2_index], k)
+
     for i in correspondences_indices:
         points_by_id[j] = triangulate_to_3d(images_interesting_points[image1_index][:, initial_correspondences[0][i]],
                                             images_interesting_points[image2_index][:, initial_correspondences[1][i]],
-                                            T,
-                                            R, k)
+                                            P_1,
+                                            P_2)
         j += 1
 
 
-
-    cloud = np.array(list(points_by_id.values()), dtype=np.float64)
-    # colors = np.random.rand(*cloud.shape)
-    colors = np.zeros(cloud.shape)
-
-    C = -R.T @ T
-
-    print(R)
-    print(T)
-    print(C)
-
-    cloud = np.vstack([cloud, C,  np.array([0, 0, 0])]).T
-    colors = np.vstack([colors, np.array([1, 1, 1]), np.array([1, 1, 1])]).T
-
-    print(len(inliers))
-
+    # Start the cluster using selected cameras and found points
     c.start(image1_index, image2_index, correspondences_indices, initial_points_indices)
 
-    ig = c.get_green_cameras()
+    cameras_checked = 2
 
-    camera_index_to_append = ig[0][np.argmax(ig[1])]
-    print(f"Adding camera {camera_index_to_append}")
+    while True:
 
-    X, u, _ = c.get_Xu(camera_index_to_append)
+        if cameras_checked >= 5:
+            break
+        cameras_checked += 1
+        # Find out, which camera to add next. Take the one with the biggest number of points ot image correspondences
+        ig = c.get_green_cameras()
+        print("Cameras left: ", ig)
+        if len(ig[0]) == 0:
+            break
 
-    ransac_p3p(points_by_id, X, images_interesting_points[camera_index_to_append], u, k, 2, 0.99)
+        camera_index_to_append = ig[0][np.argmax(ig[1])]
+        print(f"Adding camera {camera_index_to_append}")
+
+        # Calculate the Rotation and translation of the newly added camera bases on the correspondences
+        X, u, _ = c.get_Xu(camera_index_to_append)
+        inliers, R, T = ransac_p3p(points_by_id, X, images_interesting_points[camera_index_to_append], u, k, 2, 0.99999)
+
+        cameras_t[camera_index_to_append] = T
+        cameras_R[camera_index_to_append] = R
+        c.join_camera(camera_index_to_append, inliers)
+
+        # Add new point to the points cloud
+        camera_neighbours = c.get_cneighbours(camera_index_to_append)
+
+        for neighbour in camera_neighbours:
+            mi, mic = c.get_m(camera_index_to_append, neighbour)
+            new_points = []
+            inliers_indices = []
+
+            P_1 = Rtk2P(cameras_R[camera_index_to_append], cameras_t[camera_index_to_append], k)
+            P_2 = Rtk2P(cameras_R[neighbour], cameras_t[neighbour], k)
+
+            for i in range(len(mi)):
+                u1 = e2p(images_interesting_points[camera_index_to_append][:, mi[i]].reshape((2, 1)))
+                u2 = e2p(images_interesting_points[neighbour][:, mic[i]].reshape((2, 1)))
+                X = e2p(triangulate_to_3d(u1, u2, P_1, P_2).reshape((3, 1)))
+                error = max(reprojection_error(P_1, X, u1), reprojection_error(P_2, X, u2))
+
+                # Add point if the error is relatively small and the points seems to be an inlier
+                if error < POINT_REPROJECTION_ERROR_FOR_ADDITION and (P_1 @ X)[2] > 0 and (P_2 @ X)[2] > 0:
+                    new_points.append(points_max_index)
+                    inliers_indices.append(i)
+                    points_by_id[points_max_index] = p2e(X).flatten()
+                    points_max_index += 1
+
+            print(f"Adding {len(new_points)} point to the cloud...")
+            c.new_x(camera_index_to_append, neighbour, np.array(inliers_indices), np.array(new_points))
+
+        cluster_cameras = c.get_selected_cameras()
+        for camera in cluster_cameras:
+            X, u, Xu_verified = c.get_Xu(camera)
+            P = Rtk2P(cameras_R[camera], cameras_t[camera], k)
+
+            good_points_indices = []
+            for i in range(len(X)):
+                if Xu_verified[i]:
+                    continue
+                X_i = e2p(points_by_id[X[i]].reshape((3, 1)))
+                u_i = e2p(images_interesting_points[camera][:, u[i]].reshape((2, 1)))
+                error = reprojection_error(P, X_i, u_i)
+                if error < POINT_REPROJECTION_ERROR_FOR_ADDITION:
+                    good_points_indices.append(i)
+            c.verify_x(camera, good_points_indices)
+
+        c.finalize_camera()
+
+    # Make a cloud point
+    cloud = np.array(list(points_by_id.values()), dtype=np.float64)
+    colors = np.zeros(cloud.shape)
+
+    # Add cameras to the points cloud and mark them with white color
+    for i in range(len(cameras_R)):
+        if cameras_R[i] is not None:
+            C = (-cameras_R[i] @ cameras_t[i]).flatten()
+            cloud = np.vstack([cloud, C])
+            colors = np.vstack([colors, np.array([1, 1, 1])])
+
+    cloud = cloud.T
+    colors = colors.T
+    g = ge.GePly('out.ply')
+    g.points(cloud,
+             colors)
+    g.close()
+
+
 
 
 

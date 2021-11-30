@@ -22,16 +22,7 @@ def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.arr
 
     def error(x):
         # Calculate values from 6 parameters
-        if np.linalg.norm(x[:3]) == 0:
-            d_R = np.identity(3)
-        else:
-            d_R = R_from_rodrigues(np.array(x[:3]))
-
-        d_t = np.array(x[3:])
-
-        # Define new values
-        new_R = R @ d_R
-        new_t = t + d_t
+        new_R, new_t = Rt_from_array(x, R, t)
 
         F = k_inv.T @ (cross_product_matrix(-new_t) @ new_R) @ k_inv
 
@@ -136,6 +127,7 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                         best_t = t_21
                         best_E = E
                         best_inliers = inliers
+
         if np.log(1 - (best_support / points1.shape[1]) ** 5) != 0:
             k = min(np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5), 10000)
 
