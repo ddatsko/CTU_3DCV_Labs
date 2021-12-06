@@ -92,6 +92,5 @@ def plot_line(line, color: str or tuple = 'blue'):
     ax = np.linspace(plt.xlim()[0], plt.xlim()[1], 100)
     plt.plot(ax, list(
         map(lambda x: (-line[2] - line[0] * x) / line[1] if min(plt.ylim()) < (-line[2] - line[0] * x) / line[1] < max(
-            plt.ylim()) else None, ax)), color=color, )
-
+            plt.ylim()) else None, ax)), color=color)
 

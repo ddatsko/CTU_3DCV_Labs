@@ -8,10 +8,6 @@ import scipy.optimize
 A_B_COMBINATIONS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
 
 
-def sampson_approx_jacobian(F, x1, x2) -> np.array:
-    return np.vstack([(F.T @ x1)[:-1], (F @ x2)[:-1]])
-
-
 def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.array):
     k_inv = np.linalg.inv(K)
     min_error = float('inf')
@@ -27,7 +23,7 @@ def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.arr
         F = k_inv.T @ (cross_product_matrix(-new_t) @ new_R) @ k_inv
 
         # # Calculate error with new values
-        jacobians = sampson_approx_jacobian(F, u1, u2).T
+        jacobians = sampson_jacobian(F, u1, u2).T
         JJ_T = 1 / np.einsum('ij,ij->i', jacobians, jacobians)
 
         eps = epsilon(u1, F, u2)
@@ -82,7 +78,7 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
     points1 = np.linalg.inv(K) @ points1
     points2 = np.linalg.inv(K) @ points2
 
-    k = float('inf')
+    k = 10000
     n = 0
     best_support = 5
     best_R = None
@@ -114,6 +110,8 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
 
                     t_21 /= (-cross_product_matrix(t_21) @ R_21)[0][0] / E[0][0]
 
+                    # t_21 = -R_21.T @ t_21
+
                     for i in range(5):
                         p1 = random_points1[:, i]
                         p2 = random_points2[:, i]
@@ -129,7 +127,10 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                         best_inliers = inliers
 
         if np.log(1 - (best_support / points1.shape[1]) ** 5) != 0:
+            prev_k = k
             k = min(np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5), 10000)
+            k = prev_k * (1 - 1 / n) + (1 / n) * k
+
 
     best_R, best_t = fit_E_matrix(points1_original[:, sorted(best_inliers)],
                                   points2_original[:, [correspondences[i] for i in sorted(best_inliers)]], best_R,

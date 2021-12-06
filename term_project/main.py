@@ -10,7 +10,7 @@ import ge
 from typing import List
 
 
-POINT_REPROJECTION_ERROR_FOR_ADDITION = 4   # in pixels
+POINT_REPROJECTION_ERROR_FOR_ADDITION = 2   # in pixels
 
 
 def main():
@@ -26,6 +26,8 @@ def main():
 
     image1_index -= 1
     image2_index -= 1
+
+    cameras_added = [image1_index, image2_index]
 
     # Run for only the specified number of images
     if len(sys.argv) >= 4:
@@ -61,10 +63,12 @@ def main():
                                              2,
                                              0.9999)
 
+    T = T / np.linalg.norm(T)
+
     # Update the values in the array
     cameras_t[image1_index] = np.zeros((3, 1))
     cameras_R[image1_index] = np.identity(3)
-    cameras_t[image2_index] = T
+    cameras_t[image2_index] = T.reshape((3, 1))
     cameras_R[image2_index] = R
 
     # A dict to store 3d point coordinates by their id
@@ -88,12 +92,13 @@ def main():
     P_2 = Rtk2P(cameras_R[image2_index], cameras_t[image2_index], k)
 
     for i in correspondences_indices:
-        points_by_id[j] = triangulate_to_3d(images_interesting_points[image1_index][:, initial_correspondences[0][i]],
-                                            images_interesting_points[image2_index][:, initial_correspondences[1][i]],
+        u1 = e2p(images_interesting_points[image1_index][:, initial_correspondences[0][i]].reshape((2, 1)))
+        u2 = e2p(images_interesting_points[image2_index][:, initial_correspondences[1][i]].reshape((2, 1)))
+        points_by_id[j] = triangulate_to_3d(u1,
+                                            u2,
                                             P_1,
                                             P_2)
         j += 1
-
 
     # Start the cluster using selected cameras and found points
     c.start(image1_index, image2_index, correspondences_indices, initial_points_indices)
@@ -102,8 +107,8 @@ def main():
 
     while True:
 
-        if cameras_checked >= 5:
-            break
+        # if cameras_checked >= 5:
+        #     break
         cameras_checked += 1
         # Find out, which camera to add next. Take the one with the biggest number of points ot image correspondences
         ig = c.get_green_cameras()
@@ -113,10 +118,11 @@ def main():
 
         camera_index_to_append = ig[0][np.argmax(ig[1])]
         print(f"Adding camera {camera_index_to_append}")
+        cameras_added.append(camera_index_to_append)
 
         # Calculate the Rotation and translation of the newly added camera bases on the correspondences
         X, u, _ = c.get_Xu(camera_index_to_append)
-        inliers, R, T = ransac_p3p(points_by_id, X, images_interesting_points[camera_index_to_append], u, k, 2, 0.99999)
+        inliers, R, T = ransac_p3p(points_by_id, X, images_interesting_points[camera_index_to_append], u, k, 1, 0.99999)
 
         cameras_t[camera_index_to_append] = T
         cameras_R[camera_index_to_append] = R
@@ -149,6 +155,7 @@ def main():
             print(f"Adding {len(new_points)} point to the cloud...")
             c.new_x(camera_index_to_append, neighbour, np.array(inliers_indices), np.array(new_points))
 
+        # TODO: mark unverified inliers as outliers to prevent printing them to the output file
         cluster_cameras = c.get_selected_cameras()
         for camera in cluster_cameras:
             X, u, Xu_verified = c.get_Xu(camera)
@@ -168,13 +175,14 @@ def main():
         c.finalize_camera()
 
     # Make a cloud point
+    # cloud = np.array([p for p in points_by_id.values() if p[2] < 100], dtype=np.float64)
     cloud = np.array(list(points_by_id.values()), dtype=np.float64)
     colors = np.zeros(cloud.shape)
 
     # Add cameras to the points cloud and mark them with white color
     for i in range(len(cameras_R)):
         if cameras_R[i] is not None:
-            C = (-cameras_R[i] @ cameras_t[i]).flatten()
+            C = (-cameras_R[i].T @ cameras_t[i]).flatten()
             cloud = np.vstack([cloud, C])
             colors = np.vstack([colors, np.array([1, 1, 1])])
 
@@ -184,6 +192,35 @@ def main():
     g.points(cloud,
              colors)
     g.close()
+
+    # Plot cameras in matplotlib
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_xlabel("x axis")
+    ax.set_ylabel("y axis")
+    ax.set_zlabel("z axis")
+
+    for i in cameras_added:
+        # R @ X + t = 0, 0, 1
+        # X = R.T ((0, 0, 1) - t)
+        R, t = cameras_R[i], cameras_t[i]
+        camera_origin = (-R.T @ t).flatten()
+        camera_z = (R.T @ (np.array([[0], [0], [1]]) - t)).flatten()
+
+        ax.plot([camera_origin[0], camera_z[0]], [camera_origin[1], camera_z[1]], [camera_origin[2], camera_z[2]], color='black')
+        ax.text(camera_origin[0], camera_origin[1], camera_origin[2], f"{cameras_added.index(i)}", size=10, color="r")
+
+    for i in range(cameras_num):
+        for j in range(i + 1, cameras_num):
+            if j - i == 1 and j // 4 == i // 4 or j - i == 4:
+                camera1_c = (-cameras_R[i].T @ cameras_t[i]).flatten()
+                camera2_c = (-cameras_R[j].T @ cameras_t[j]).flatten()
+                ax.plot([camera1_c[0], camera2_c[0]],
+                        [camera1_c[1], camera2_c[1]],
+                        [camera1_c[2], camera2_c[2]],
+                        color=('blue' if i != image1_index or j != image2_index else 'red'))
+
+    plt.show()
 
 
 

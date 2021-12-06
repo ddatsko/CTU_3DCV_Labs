@@ -39,7 +39,7 @@ def _calculate_p3p_support(P, world_points, image_points, threshold):
 
 
 def ransac_p3p(world_points: Mapping[int, np.array], X: np.array, image_interesting_points: np.array, u: np.array,
-               K: np.array, threshold: float = 2, p: float = 0.9999):
+               K: np.array, threshold: float = 2, p: float = 0.99999):
     K_inv = np.linalg.inv(K)
 
     image_interesting_points = e2p(image_interesting_points)
@@ -85,11 +85,13 @@ def ransac_p3p(world_points: Mapping[int, np.array], X: np.array, image_interest
                 best_inliers = np.array(inliers)
                 print(f"Best support: {best_support}")
 
+        k += 1
         if np.isclose(np.log(1 - (best_support / len(X)) ** 3), 0):
             n = n
         else:
             n = min(1000, np.log(1 - p) / np.log(1 - (best_support / len(X)) ** 3))
-        k += 1
+            # n = (10 / k) * new_n + (1 - 10 / k) * n
+
 
 
     # print(f"R, t before optimization: \n{best_R}\n{best_t}")
@@ -101,4 +103,4 @@ def ransac_p3p(world_points: Mapping[int, np.array], X: np.array, image_interest
                           )
     # print(f"R, t after optimization: \n{R}\n{t}")
 
-    return best_inliers, best_R, best_t
+    return best_inliers, R, t.reshape((3, 1))

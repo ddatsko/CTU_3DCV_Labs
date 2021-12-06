@@ -42,11 +42,29 @@ def triangulate_to_3d_hom(u1: np.array, u2: np.array, P_1: np.array, P_2: np.arr
     return X
 
 
+def sampson_corrected(u1: np.array, u2: np.array, F: np.array):
+    J = sampson_jacobian(F, u1, u2)
+    eps = u2.T @ F @ u1
+    J *= eps / (np.linalg.norm(J) ** 2)
+
+    u1[0][0] -= J[0][0]
+    u1[1][0] -= J[1][0]
+    u2[0][0] -= J[2][0]
+    u2[1][0] -= J[3][0]
+    return p2e(u1).flatten(), p2e(u2).flatten()
+
+
 def triangulate_to_3d(u1: np.array, u2: np.array, P_1: np.array, P_2: np.array) -> np.array:
     """
     Returns: X in world coordinates
     """
-    # print(triangulate_to_3d_hom(u1, u2, t, R))(u1, u2, t, R))
+    # # Using sampson correction here
+    Q1, Q2 = P_1[:, :3], P_2[:, :3]
+    q1, q2 = P_1[:, 3].reshape((3, 1)), P_2[:, 3].reshape((3, 1))
+    F = (Q1 @ np.linalg.inv(Q2)).T @ cross_product_matrix(q1 - (Q1 @ np.linalg.inv(Q2)) @ q2)
+
+    # u1, u2 = sampson_corrected(u1, u2, F)
+
     return triangulate_to_3d_hom(u1, u2, P_1, P_2)[:-1]
 
 
@@ -90,3 +108,8 @@ def reprojection_error(P: np.array, X: np.array, u: np.array):
     res = np.sum((reprojected_inliers - u) ** 2, axis=1)
 
     return np.sum(np.sqrt(res))
+
+
+def sampson_jacobian(F, x1, x2) -> np.array:
+    # return np.vstack([(F.T @ x1)[:-1], (F @ x2)[:-1]])
+    return np.vstack([(F.T @ x2)[:-1], (F @ x1)[:-1]])
