@@ -61,11 +61,21 @@ def p5gb(u1, u2):
 
 
 def get_points_correspondences(correspondences_file: str) -> Mapping[int, int]:
+    """
+    Read points correspondences from specified file
+    @param correspondences_file: name of the file to read
+    @return: dict in form {image1_point: image2_point}
+    """
     correspondences = np.fromfile(correspondences_file, dtype=np.int32, sep=' \n')
     return {c[0]: c[1] for c in np.reshape(correspondences, newshape=(int(correspondences.shape[0] / 2), 2))}
 
 
 def read_points(file_path: str) -> np.array:
+    """
+    Read interesting points from the specified file
+    @param file_path: path of the file to read points from
+    @return: Points in np.array of shape (2, n), where n is the number of points
+    """
     file_data = np.fromfile(file_path, dtype=np.float64, sep=' \n')
     return np.reshape(file_data, newshape=(int(file_data.shape[0] / 2), 2)).T
 
@@ -94,3 +104,30 @@ def plot_line(line, color: str or tuple = 'blue'):
         map(lambda x: (-line[2] - line[0] * x) / line[1] if min(plt.ylim()) < (-line[2] - line[0] * x) / line[1] < max(
             plt.ylim()) else None, ax)), color=color)
 
+
+def get_image_image_correspondences(image1_points: np.array,
+                                    image2_points: np.array,
+                                    Xu1: (np.array, np.array, np.array),
+                                    Xu2: (np.array, np.array, np.array)) -> (np.array, np.array):
+    """
+    Get coordinates corresponding points of 2 images from image point to 3D point correspondences
+    @param image1_points: pixel coordinates of first image interesting points
+    @param image2_points: pixel coordinates of second image interesting points
+    @param Xu1: (X, u, verified): 3d points indices, corresponding image1 interesting points indices, array of booleans
+    where verified[i] means that correspondence is verified by reprojection error
+    @param Xu2: (X, u, verified): 3d points indices, corresponding image2 interesting points indices, array of booleans
+    where verified[i] means that correspondence is verified by reprojection error
+    @return: 2 arrays: pixel coordinates of first image points and pixel coordinates of corresponding second image points
+    """
+    X1, u1, verified1 = Xu1
+    X2, u2, verified2 = Xu2
+    world_to_im1 = {X1[i]: u1[i] for i in range(X1.shape[0]) if verified1[i]}
+    world_to_im2 = {X2[i]: u2[i] for i in range(X2.shape[0]) if verified2[i]}
+
+    res = ([], [])
+    for world_point in world_to_im1.keys():
+        if world_point in world_to_im2:
+            res[0].append(image1_points[:, world_to_im1[world_point]])
+            res[1].append(image2_points[:, world_to_im2[world_point]])
+
+    return np.array(res[0]).T, np.array(res[1]).T

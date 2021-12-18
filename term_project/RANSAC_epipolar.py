@@ -131,7 +131,6 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
             k = min(np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5), 10000)
             k = prev_k * (1 - 1 / n) + (1 / n) * k
 
-
     best_R, best_t = fit_E_matrix(points1_original[:, sorted(best_inliers)],
                                   points2_original[:, [correspondences[i] for i in sorted(best_inliers)]], best_R,
                                   best_t, K)

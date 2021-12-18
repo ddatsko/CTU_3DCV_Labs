@@ -1,22 +1,23 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-from utils import get_points_correspondences, read_points, get_k_from_file
+from utils import get_points_correspondences, read_points, get_k_from_file, get_image_image_correspondences
 from RANSAC_epipolar import ransac_epipolar, cross_product_matrix
 from corresp import Corresp
 from toolbox import triangulate_to_3d, reprojection_error, e2p, p2e, Rtk2P
 from RANSAC_P3P import ransac_p3p
 import ge
 from typing import List
+from stereo_matching import get_rectified_image_task
+import scipy.io
 
-
-POINT_REPROJECTION_ERROR_FOR_ADDITION = 2   # in pixels
+POINT_REPROJECTION_ERROR_FOR_ADDITION = 2  # in pixels
 
 
 def main():
     if len(sys.argv) < 2:
-        image1_index = 6
-        image2_index = 7
+        image1_index = 1
+        image2_index = 2
     else:
         image1_index = int(sys.argv[1])
         image2_index = int(sys.argv[2])
@@ -47,21 +48,23 @@ def main():
         images_interesting_points.append(read_points(f'data/scene_1/corresp/u_{str(i).zfill(2)}.txt'))
 
         for j in range(1, i):
-            correspondences = get_points_correspondences(f'data/scene_1/corresp/m_{str(j).zfill(2)}_{str(i).zfill(2)}.txt')
+            correspondences = get_points_correspondences(
+                f'data/scene_1/corresp/m_{str(j).zfill(2)}_{str(i).zfill(2)}.txt')
             c.add_pair(j - 1, i - 1, np.array(list(correspondences.items())))
 
     k = get_k_from_file()
 
     # Find the cameras relative rotation and translation
     initial_correspondences = c.get_m(image1_index, image2_index)
-    correspondences_dict = {initial_correspondences[0][i]: initial_correspondences[1][i] for i in range(len(initial_correspondences[0]))}
+    correspondences_dict = {initial_correspondences[0][i]: initial_correspondences[1][i] for i in
+                            range(len(initial_correspondences[0]))}
 
     support, inliers, R, T, E = ransac_epipolar(images_interesting_points[image1_index],
-                                             images_interesting_points[image2_index],
-                                             correspondences_dict,
-                                             k,
-                                             2,
-                                             0.9999)
+                                                images_interesting_points[image2_index],
+                                                correspondences_dict,
+                                                k,
+                                                2,
+                                                0.9999)
 
     T = T / np.linalg.norm(T)
 
@@ -107,7 +110,7 @@ def main():
 
     while True:
 
-        # if cameras_checked >= 5:
+        # if cameras_checked >= 2:
         #     break
         cameras_checked += 1
         # Find out, which camera to add next. Take the one with the biggest number of points ot image correspondences
@@ -155,7 +158,6 @@ def main():
             print(f"Adding {len(new_points)} point to the cloud...")
             c.new_x(camera_index_to_append, neighbour, np.array(inliers_indices), np.array(new_points))
 
-        # TODO: mark unverified inliers as outliers to prevent printing them to the output file
         cluster_cameras = c.get_selected_cameras()
         for camera in cluster_cameras:
             X, u, Xu_verified = c.get_Xu(camera)
@@ -176,54 +178,71 @@ def main():
 
     # Make a cloud point
     # cloud = np.array([p for p in points_by_id.values() if p[2] < 100], dtype=np.float64)
-    cloud = np.array(list(points_by_id.values()), dtype=np.float64)
-    colors = np.zeros(cloud.shape)
-
-    # Add cameras to the points cloud and mark them with white color
-    for i in range(len(cameras_R)):
-        if cameras_R[i] is not None:
-            C = (-cameras_R[i].T @ cameras_t[i]).flatten()
-            cloud = np.vstack([cloud, C])
-            colors = np.vstack([colors, np.array([1, 1, 1])])
-
-    cloud = cloud.T
-    colors = colors.T
-    g = ge.GePly('out.ply')
-    g.points(cloud,
-             colors)
-    g.close()
+    # cloud = np.array(list(points_by_id.values()), dtype=np.float64)
+    # colors = np.zeros(cloud.shape)
+    #
+    # # Add cameras to the points cloud and mark them with white color
+    # for i in range(len(cameras_R)):
+    #     if cameras_R[i] is not None:
+    #         C = (-cameras_R[i].T @ cameras_t[i]).flatten()
+    #         cloud = np.vstack([cloud, C])
+    #         colors = np.vstack([colors, np.array([1, 1, 1])])
+    #
+    # cloud = cloud.T
+    # colors = colors.T
+    # g = ge.GePly('out.ply')
+    # g.points(cloud,
+    #          colors)
+    # g.close()
 
     # Plot cameras in matplotlib
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlabel("x axis")
-    ax.set_ylabel("y axis")
-    ax.set_zlabel("z axis")
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.set_xlabel("x axis")
+    # ax.set_ylabel("y axis")
+    # ax.set_zlabel("z axis")
+    #
+    # for i in cameras_added:
+    #     R, t = cameras_R[i], cameras_t[i]
+    #     camera_origin = (-R.T @ t).flatten()
+    #     camera_z = (R.T @ (np.array([[0], [0], [1]]) - t)).flatten()
+    #
+    #     ax.plot([camera_origin[0], camera_z[0]], [camera_origin[1], camera_z[1]], [camera_origin[2], camera_z[2]], color='black')
+    #     ax.text(camera_origin[0], camera_origin[1], camera_origin[2], f"{cameras_added.index(i)}", size=10, color="r")
+    #
+    # for i in range(cameras_num):
+    #     for j in range(i + 1, cameras_num):
+    #         if j - i == 1 and j // 4 == i // 4 or j - i == 4:
+    #             camera1_c = (-cameras_R[i].T @ cameras_t[i]).flatten()
+    #             camera2_c = (-cameras_R[j].T @ cameras_t[j]).flatten()
+    #             ax.plot([camera1_c[0], camera2_c[0]],
+    #                     [camera1_c[1], camera2_c[1]],
+    #                     [camera1_c[2], camera2_c[2]],
+    #                     color=('blue' if i != image1_index or j != image2_index else 'red'))
 
-    for i in cameras_added:
-        # R @ X + t = 0, 0, 1
-        # X = R.T ((0, 0, 1) - t)
-        R, t = cameras_R[i], cameras_t[i]
-        camera_origin = (-R.T @ t).flatten()
-        camera_z = (R.T @ (np.array([[0], [0], [1]]) - t)).flatten()
+    # plt.show()
 
-        ax.plot([camera_origin[0], camera_z[0]], [camera_origin[1], camera_z[1]], [camera_origin[2], camera_z[2]], color='black')
-        ax.text(camera_origin[0], camera_origin[1], camera_origin[2], f"{cameras_added.index(i)}", size=10, color="r")
-
+    tasks = []
+    k_inv = np.linalg.inv(k)
     for i in range(cameras_num):
         for j in range(i + 1, cameras_num):
-            if j - i == 1 and j // 4 == i // 4 or j - i == 4:
-                camera1_c = (-cameras_R[i].T @ cameras_t[i]).flatten()
-                camera2_c = (-cameras_R[j].T @ cameras_t[j]).flatten()
-                ax.plot([camera1_c[0], camera2_c[0]],
-                        [camera1_c[1], camera2_c[1]],
-                        [camera1_c[2], camera2_c[2]],
-                        color=('blue' if i != image1_index or j != image2_index else 'red'))
+            # Check for neighboring cameras
+            if i % 4 == j % 4 or (i // 4 == j // 4 and j - i == 1):
+                image1 = plt.imread(f'data/scene_1/images/{str(i + 1).zfill(2)}.jpg')
+                image2 = plt.imread(f'data/scene_1/images/{str(j + 1).zfill(2)}.jpg')
 
-    plt.show()
+                # Compose matrix F
+                R_21 = cameras_R[j] @ cameras_R[i].T
+                F = k_inv.T @ -cross_product_matrix((cameras_t[j] - R_21 @ cameras_t[i]).flatten()) @ R_21 @ k_inv
 
+                seed_correspondences = get_image_image_correspondences(images_interesting_points[i],
+                                                                       images_interesting_points[j],
+                                                                       c.get_Xu(i),
+                                                                       c.get_Xu(j))
 
-
+                tasks.append(get_rectified_image_task(image1, image2, F, seed_correspondences))
+    tasks = np.vstack(tasks)
+    scipy.io.savemat('stereo_in.mat', {'task': tasks})
 
 
 
