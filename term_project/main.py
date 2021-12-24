@@ -178,7 +178,7 @@ def main():
 
     # Make a sparse point cloud
     cloud = np.array(list(points_by_id.values()), dtype=np.float64).T
-    colors = np.zeros(cloud.shape).T
+    colors = np.zeros(cloud.shape)
 
     g = ge.GePly('sparse.ply')
     g.points(cloud, colors)
