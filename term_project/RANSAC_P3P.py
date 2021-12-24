@@ -34,12 +34,11 @@ def _calculate_p3p_support(P, world_points, image_points, threshold):
     distances = np.sqrt(np.sum((reprojected.T - image_points.T) ** 2, axis=1))
 
     inliers = np.where(np.abs(distances) < threshold)[0]
-        # print(best_support, k)
     return inliers, np.sum(1 - (distances[np.abs(distances) < threshold] ** 2) / (threshold ** 2))
 
 
 def ransac_p3p(world_points: Mapping[int, np.array], X: np.array, image_interesting_points: np.array, u: np.array,
-               K: np.array, threshold: float = 2, p: float = 0.99999):
+               K: np.array, threshold: float = 2, p: float = 0.999999):
     K_inv = np.linalg.inv(K)
 
     image_interesting_points = e2p(image_interesting_points)
@@ -68,11 +67,7 @@ def ransac_p3p(world_points: Mapping[int, np.array], X: np.array, image_interest
 
         possible_Xs = p3p.p3p_grunert(X_points, u_points.T)
 
-        # print(X_points)
-        # print(world_points[X[chosen_points[0]]])
-
         for possible_X in possible_Xs:
-            # TODO: check the order of parameters here
             R, t = p3p.XX2Rt_simple(X_points, possible_X)
 
             # Reconstruct P with K to make error measurements be in pixels
@@ -90,17 +85,12 @@ def ransac_p3p(world_points: Mapping[int, np.array], X: np.array, image_interest
             n = n
         else:
             n = min(1000, np.log(1 - p) / np.log(1 - (best_support / len(X)) ** 3))
-            # n = (10 / k) * new_n + (1 - 10 / k) * n
 
-
-
-    # print(f"R, t before optimization: \n{best_R}\n{best_t}")
     R, t = optimize_error(all_world_points[:, best_inliers],
                           all_image_points[:, best_inliers],
                           best_R,
                           best_t,
                           K
                           )
-    # print(f"R, t after optimization: \n{R}\n{t}")
 
     return best_inliers, R, t.reshape((3, 1))

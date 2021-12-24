@@ -9,11 +9,20 @@ A_B_COMBINATIONS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
 
 
 def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.array):
+    """
+    Function for finding the essential matrix that minimizes the algebraic error for given points
+    @param u1: points on image1
+    @param u2: points on image2
+    @param R: Initial estimate of relative rotation of the second camera with respect to the first one
+    @param t: Initial estimate of the relative translation of the second camera with respect to the first one
+    @param K: Calibration matrix for both cameras
+    @return: New optimized matrix E
+    """
     k_inv = np.linalg.inv(K)
     min_error = float('inf')
 
     def epsilon(x: np.array, F: np.array, y: np.array):
-        # return np.array([y[:, i].T @ F @ x[:, i] for i in range(x.shape[1])])
+        # Return the sum of algebraic errors for the set of points
         return np.einsum('ij,ij->i', y.T, (F @ x).T)
 
     def error(x):
@@ -22,7 +31,7 @@ def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.arr
 
         F = k_inv.T @ (cross_product_matrix(-new_t) @ new_R) @ k_inv
 
-        # # Calculate error with new values
+        # Calculate error with new values
         jacobians = sampson_jacobian(F, u1, u2).T
         JJ_T = 1 / np.einsum('ij,ij->i', jacobians, jacobians)
 
@@ -44,6 +53,7 @@ def fit_E_matrix(u1: np.array, u2: np.array, R: np.array, t: np.array, K: np.arr
 
 
 def calculate_support(u1: np.array, u2: np.array, correspondences: Mapping, E: np.array, K: np.array, threshold: float):
+    # Calculate the support of matrix E by calculation the algebraic error for each point correspondence
     k_inv = np.linalg.inv(K)
     F = k_inv.T @ E @ k_inv
 
@@ -85,7 +95,6 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
     best_t = None
     best_E = None
     best_inliers = []
-    best_chosen_points = None
 
     while (n := n + 1) < k:
         if n % 20 == 0:
@@ -96,9 +105,12 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
         possible_Es = p5gb(random_points1, random_points2)
 
         for E in possible_Es:
+            # Firstly, calculate the support and only then obtain R and t from E
             support, inliers = calculate_support(points1_original, points2_original, correspondences, E, K, thresh)
             if support > best_support:
                 u, s, v_t = np.linalg.svd(E)
+
+                # Check different combinations of possible R and t
                 for a, b in A_B_COMBINATIONS:
                     u *= np.linalg.det(u)
                     v_t *= np.linalg.det(v_t)
@@ -107,11 +119,9 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                                          [-a, 0, 0],
                                          [0, 0, 1]]) @ v_t
                     t_21 = -b * u[:, 2]
-
                     t_21 /= (-cross_product_matrix(t_21) @ R_21)[0][0] / E[0][0]
 
-                    # t_21 = -R_21.T @ t_21
-
+                    # Check if each of chosen points if in front of the camera
                     for i in range(5):
                         p1 = random_points1[:, i]
                         p2 = random_points2[:, i]
@@ -126,11 +136,13 @@ def ransac_epipolar(points1: np.array, points2: np.array, correspondences: Mappi
                         best_E = E
                         best_inliers = inliers
 
+        # Recalculate the number of iterations by taking into account the previous value
         if np.log(1 - (best_support / points1.shape[1]) ** 5) != 0:
             prev_k = k
             k = min(np.log(1 - p) / np.log(1 - (len(best_inliers) / len(correspondences.keys())) ** 5), 10000)
             k = prev_k * (1 - 1 / n) + (1 / n) * k
 
+    # Minimize error on inliers and obtain the best R and t for them
     best_R, best_t = fit_E_matrix(points1_original[:, sorted(best_inliers)],
                                   points2_original[:, [correspondences[i] for i in sorted(best_inliers)]], best_R,
                                   best_t, K)

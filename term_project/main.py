@@ -1,17 +1,22 @@
-import numpy as np
 import matplotlib.pyplot as plt
 import sys
 from utils import get_points_correspondences, read_points, get_k_from_file, get_image_image_correspondences
 from RANSAC_epipolar import ransac_epipolar, cross_product_matrix
 from corresp import Corresp
-from toolbox import triangulate_to_3d, reprojection_error, e2p, p2e, Rtk2P
 from RANSAC_P3P import ransac_p3p
 import ge
-from typing import List
-from stereo_matching import get_rectified_image_task
-import scipy.io
+from stereo_matching import *
 
-POINT_REPROJECTION_ERROR_FOR_ADDITION = 2  # in pixels
+POINT_REPROJECTION_ERROR_FOR_ADDITION = 1.5  # in pixels
+
+# Camera pairs used for dense point cloud reconstruction
+# TODO: find out which pairs had better been filtered
+CAMERA_PAIRS_FOR_RECONSTRUCTION = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6), (6, 7), (8, 9), (9, 10), (10, 11),
+                                   (0, 4), (1, 5), (2, 6), (3, 7), (4, 8), (5, 9), (6, 10), (7, 11)]
+
+# Colors of points corresponding to each camera pair
+POINTS_COLORS = [np.array([(i * 170) % 256, (i * 170 ** 2) % 256, (i * 170 ** 3) % 256], dtype=np.uint8)
+                 for i in range(len(CAMERA_PAIRS_FOR_RECONSTRUCTION))]
 
 
 def main():
@@ -63,7 +68,7 @@ def main():
                                                 images_interesting_points[image2_index],
                                                 correspondences_dict,
                                                 k,
-                                                2,
+                                                1.5,
                                                 0.9999)
 
     T = T / np.linalg.norm(T)
@@ -106,13 +111,7 @@ def main():
     # Start the cluster using selected cameras and found points
     c.start(image1_index, image2_index, correspondences_indices, initial_points_indices)
 
-    cameras_checked = 2
-
     while True:
-
-        # if cameras_checked >= 2:
-        #     break
-        cameras_checked += 1
         # Find out, which camera to add next. Take the one with the biggest number of points ot image correspondences
         ig = c.get_green_cameras()
         print("Cameras left: ", ig)
@@ -131,7 +130,7 @@ def main():
         cameras_R[camera_index_to_append] = R
         c.join_camera(camera_index_to_append, inliers)
 
-        # Add new point to the points cloud
+        # Add new points to the point cloud
         camera_neighbours = c.get_cneighbours(camera_index_to_append)
 
         for neighbour in camera_neighbours:
@@ -158,6 +157,7 @@ def main():
             print(f"Adding {len(new_points)} point to the cloud...")
             c.new_x(camera_index_to_append, neighbour, np.array(inliers_indices), np.array(new_points))
 
+        # Verify the correspondences by checking the reprojection error
         cluster_cameras = c.get_selected_cameras()
         for camera in cluster_cameras:
             X, u, Xu_verified = c.get_Xu(camera)
@@ -176,74 +176,53 @@ def main():
 
         c.finalize_camera()
 
-    # Make a cloud point
-    # cloud = np.array([p for p in points_by_id.values() if p[2] < 100], dtype=np.float64)
-    # cloud = np.array(list(points_by_id.values()), dtype=np.float64)
-    # colors = np.zeros(cloud.shape)
-    #
-    # # Add cameras to the points cloud and mark them with white color
-    # for i in range(len(cameras_R)):
-    #     if cameras_R[i] is not None:
-    #         C = (-cameras_R[i].T @ cameras_t[i]).flatten()
-    #         cloud = np.vstack([cloud, C])
-    #         colors = np.vstack([colors, np.array([1, 1, 1])])
-    #
-    # cloud = cloud.T
-    # colors = colors.T
-    # g = ge.GePly('out.ply')
-    # g.points(cloud,
-    #          colors)
-    # g.close()
+    # Make a sparse point cloud
+    cloud = np.array(list(points_by_id.values()), dtype=np.float64).T
+    colors = np.zeros(cloud.shape).T
 
-    # Plot cameras in matplotlib
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # ax.set_xlabel("x axis")
-    # ax.set_ylabel("y axis")
-    # ax.set_zlabel("z axis")
-    #
-    # for i in cameras_added:
-    #     R, t = cameras_R[i], cameras_t[i]
-    #     camera_origin = (-R.T @ t).flatten()
-    #     camera_z = (R.T @ (np.array([[0], [0], [1]]) - t)).flatten()
-    #
-    #     ax.plot([camera_origin[0], camera_z[0]], [camera_origin[1], camera_z[1]], [camera_origin[2], camera_z[2]], color='black')
-    #     ax.text(camera_origin[0], camera_origin[1], camera_origin[2], f"{cameras_added.index(i)}", size=10, color="r")
-    #
-    # for i in range(cameras_num):
-    #     for j in range(i + 1, cameras_num):
-    #         if j - i == 1 and j // 4 == i // 4 or j - i == 4:
-    #             camera1_c = (-cameras_R[i].T @ cameras_t[i]).flatten()
-    #             camera2_c = (-cameras_R[j].T @ cameras_t[j]).flatten()
-    #             ax.plot([camera1_c[0], camera2_c[0]],
-    #                     [camera1_c[1], camera2_c[1]],
-    #                     [camera1_c[2], camera2_c[2]],
-    #                     color=('blue' if i != image1_index or j != image2_index else 'red'))
+    g = ge.GePly('sparse.ply')
+    g.points(cloud, colors)
+    g.close()
 
-    # plt.show()
+    # Construct the dense points cloud
+    points = []
+    for i in range(len(CAMERA_PAIRS_FOR_RECONSTRUCTION)):
+        c1, c2 = CAMERA_PAIRS_FOR_RECONSTRUCTION[i]
 
-    tasks = []
-    k_inv = np.linalg.inv(k)
-    for i in range(cameras_num):
-        for j in range(i + 1, cameras_num):
-            # Check for neighboring cameras
-            if i % 4 == j % 4 or (i // 4 == j // 4 and j - i == 1):
-                image1 = plt.imread(f'data/scene_1/images/{str(i + 1).zfill(2)}.jpg')
-                image2 = plt.imread(f'data/scene_1/images/{str(j + 1).zfill(2)}.jpg')
+        image1 = plt.imread(f'data/scene_1/images/{str(c1 + 1).zfill(2)}.jpg')
+        image2 = plt.imread(f'data/scene_1/images/{str(c2 + 1).zfill(2)}.jpg')
 
-                # Compose matrix F
-                R_21 = cameras_R[j] @ cameras_R[i].T
-                F = k_inv.T @ -cross_product_matrix((cameras_t[j] - R_21 @ cameras_t[i]).flatten()) @ R_21 @ k_inv
+        # Get seed correspondences from inlier correspondences to make algorithm find the right correspondences quicker
+        seed_correspondences = get_image_image_correspondences(images_interesting_points[c1],
+                                                               images_interesting_points[c2],
+                                                               c.get_Xu(c1),
+                                                               c.get_Xu(c2))
+        # Run the algorithm and get set of points
+        new_points = get_rectified_image_task(image1,
+                                              image2,
+                                              cameras_R[c1],
+                                              cameras_t[c1],
+                                              cameras_R[c2],
+                                              cameras_t[c2],
+                                              k,
+                                              seed_correspondences)
+        points_colors = [POINTS_COLORS[i]] * len(new_points)
 
-                seed_correspondences = get_image_image_correspondences(images_interesting_points[i],
-                                                                       images_interesting_points[j],
-                                                                       c.get_Xu(i),
-                                                                       c.get_Xu(j))
+        # Add points to the dense points cloud (with black color)
+        points.extend(new_points)
 
-                tasks.append(get_rectified_image_task(image1, image2, F, seed_correspondences))
-    tasks = np.vstack(tasks)
-    scipy.io.savemat('stereo_in.mat', {'task': tasks})
+        # Save temporary result to be able to analyse each camera pair independently
+        g = ge.GePly(f'{c1}_{c2}.ply')
+        g.points(np.array(new_points, dtype=np.float64).T, np.array(points_colors, dtype=np.uint8).T)
+        g.close()
 
+    # Export the dense point cloud with black points
+    cloud = np.array(points, dtype=np.float64).T
+    colors = np.zeros(cloud.shape())
+    g = ge.GePly('dense.ply')
+    g.points(cloud,
+             colors)
+    g.close()
 
 
 if __name__ == '__main__':

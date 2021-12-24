@@ -1,4 +1,5 @@
 import numpy as np
+from typing import List
 
 
 def e2p(array: np.ndarray) -> np.ndarray:
@@ -11,6 +12,7 @@ def p2e(array: np.ndarray) -> np.ndarray:
 
 
 def cross_product_matrix(v: np.array):
+    v = v.flatten()
     return np.array([[0, -v[2], v[1]],
                      [v[2], 0, -v[0]],
                      [-v[1], v[0], 0]])
@@ -34,7 +36,7 @@ def triangulate_to_3d_hom(u1: np.array, u2: np.array, P_1: np.array, P_2: np.arr
     D = np.array([u1[0] * P_1[2] - P_1[0],
                   u1[1] * P_1[2] - P_1[1],
                   u2[0] * P_2[2] - P_2[0],
-                  u2[1] * P_2[2] - P_2[1]])
+                  u2[1] * P_2[2] - P_2[1]], dtype=np.float32)
 
     u, o, v_t = np.linalg.svd(D)
 
@@ -43,33 +45,27 @@ def triangulate_to_3d_hom(u1: np.array, u2: np.array, P_1: np.array, P_2: np.arr
     return X
 
 
-def sampson_corrected(u1: np.array, u2: np.array, F: np.array):
-    # J = sampson_jacobian(F, u1, u2)
-    # eps = u2.T @ F @ u1
-    #
-    # J *= eps / (np.linalg.norm(J) ** 2)
-
+def sampson_corrected(u1: np.array, u2: np.array, F: np.array) -> (np.array, np.array):
+    """
+    Sampson correction for multiple points of the same pair of images and common matrix F
+    TODO: leave only this function and remove the @sampson_corrected one
+    @param u1: 2d np array of homogeneous points coordinates of the first image of shape (3, n)
+    @param u2: 2d np array of homogeneous point coordinates of the second image of shape (3, n)
+    @param F: Common fundamental matrix for correspondences
+    @return: 2 np arrays: coordinates of corrected points on both images of shapes (2, n)
+    """
     S = np.array([[1, 0, 0], [0, 1, 0]])
-    v = np.array([[u1[0][0]], [u1[1][0]], [u2[0][0]], [u2[1][0]]])
-    # print(np.array([[(F[:, 0].T @ u2)[0][0]],
-    #                                                                         [(F[:, 1].T @ u2)[0][0]],
-    #                                                                         [(F[0] @ u1)[0][0]],
-    #                                                                         [(F[1] @ u1)[0][0]]]))
-    #
-    # print(((u2.T @ F @ u1) / (np.linalg.norm(S @ F @ u1) ** 2 +
-    #                         np.linalg.norm(S @ F.T @ u2) ** 2)).flatten()[0])
+    v = np.array([u1[0], u1[1], u2[0], u2[1]])
 
-    v -= ((u2.T @ F @ u1) / (np.linalg.norm(S @ F @ u1) ** 2 +
-                            np.linalg.norm(S @ F.T @ u2) ** 2)).flatten()[0] * np.array([[(F[:, 0].T @ u2)[0][0]],
-                                                                            [(F[:, 1].T @ u2)[0][0]],
-                                                                            [(F[0] @ u1)[0][0]],
-                                                                            [(F[1] @ u1)[0][0]]])
-    v = v.flatten()
-
-    return np.array([v[0], v[1]]), np.array([v[2], v[3]])
+    v -= (np.einsum('ij,ij->i', u2.T, (F @ u1).T) /
+          (np.sum((S @ F @ u1) ** 2, axis=0) + np.sum((S @ F.T @ u2) ** 2, axis=0))) * np.array([(F[:, 0].reshape((1, 3)) @ u2)[0],
+                                                                                                 (F[:, 1].reshape((1, 3)) @ u2)[0],
+                                                                                                 (F[0].reshape((1, 3)) @ u1)[0],
+                                                                                                 (F[1].reshape((1, 3)) @ u1)[0]])
+    return v[:2], v[2:]
 
 
-def triangulate_to_3d(u1: np.array, u2: np.array, P_1: np.array, P_2: np.array) -> np.array:
+def triangulate_to_3d(u1: np.array, u2: np.array, P_1: np.array, P_2: np.array) -> np.array or List[np.array]:
     """
     Returns: X in world coordinates
     """
@@ -79,8 +75,17 @@ def triangulate_to_3d(u1: np.array, u2: np.array, P_1: np.array, P_2: np.array) 
     q1, q2 = P_1[:, 3].reshape((3, 1)), P_2[:, 3].reshape((3, 1))
     F = (Q1 @ np.linalg.inv(Q2)).T @ cross_product_matrix(q1 - (Q1 @ np.linalg.inv(Q2)) @ q2)
 
-    u1, u2 = sampson_corrected(u1, u2, F)
-    return triangulate_to_3d_hom(u1.flatten(), u2.flatten(), P_1, P_2)[:-1]
+    if u1.shape[1] == 1:
+        u1, u2 = sampson_corrected(u1, u2, F)
+        return triangulate_to_3d_hom(u1.flatten(), u2.flatten(), P_1, P_2)[:-1]
+
+    else:
+
+        u1, u2 = sampson_corrected(u1, u2, F)
+        res = []
+        for i in range(u1.shape[1]):
+            res.append(triangulate_to_3d_hom(u1[:, i].flatten(), u2[:, i].flatten(), P_1, P_2)[:-1])
+        return res
 
 
 def R_from_rodrigues(a: np.array):
