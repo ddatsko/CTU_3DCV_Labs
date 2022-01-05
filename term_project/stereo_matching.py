@@ -16,7 +16,7 @@ def get_rectified_image_task(image1: np.array,
                              R2: np.array,
                              t2: np.array,
                              K: np.array,
-                             seed_correspondences: (np.array, np.array)) -> List[np.array]:
+                             seed_correspondences: (np.array, np.array)) -> (np.array, List[np.array]):
     """
     Function for finding 3d point by given 2 images and their P matrices
     @param image1: First image
@@ -29,7 +29,7 @@ def get_rectified_image_task(image1: np.array,
     @param seed_correspondences: known verified image1 to image2 points correspondences. Two numpy
     arrays of shape (2, n) where n is the number of correspondences
 
-    @return: one task that should be passed to the algorithm in MatLab
+    @return: disparity map between images and list of triangulated 3d points
     """
     k_inv = np.linalg.inv(K)
     # Compose matrix F
@@ -82,7 +82,7 @@ def get_rectified_image_task(image1: np.array,
 
         points.extend(triangulate_to_3d(points_1_orig, points_2_orig, P_1, P_2))
 
-    return points
+    return np.nan_to_num(D[0][0]), points
 
 
 

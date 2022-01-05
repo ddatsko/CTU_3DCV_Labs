@@ -10,9 +10,9 @@ from stereo_matching import *
 POINT_REPROJECTION_ERROR_FOR_ADDITION = 1.5  # in pixels
 
 # Camera pairs used for dense point cloud reconstruction
-# TODO: find out which pairs had better been filtered
+# NOTE: camera pairs (0, 4), (2, 6), (4, 8), (6, 10) are removed due to many bad points
 CAMERA_PAIRS_FOR_RECONSTRUCTION = [(0, 1), (1, 2), (2, 3), (4, 5), (5, 6), (6, 7), (8, 9), (9, 10), (10, 11),
-                                   (0, 4), (1, 5), (2, 6), (3, 7), (4, 8), (5, 9), (6, 10), (7, 11)]
+                                   (1, 5), (3, 7), (5, 9), (7, 11)]
 
 # Colors of points corresponding to each camera pair
 POINTS_COLORS = [np.array([(i * 170) % 256, (i * 170 ** 2) % 256, (i * 170 ** 3) % 256], dtype=np.uint8)
@@ -198,15 +198,19 @@ def main():
                                                                c.get_Xu(c1),
                                                                c.get_Xu(c2))
         # Run the algorithm and get set of points
-        new_points = get_rectified_image_task(image1,
-                                              image2,
-                                              cameras_R[c1],
-                                              cameras_t[c1],
-                                              cameras_R[c2],
-                                              cameras_t[c2],
-                                              k,
-                                              seed_correspondences)
+        disparity, new_points = get_rectified_image_task(image1,
+                                                         image2,
+                                                         cameras_R[c1],
+                                                         cameras_t[c1],
+                                                         cameras_R[c2],
+                                                         cameras_t[c2],
+                                                         k,
+                                                         seed_correspondences)
+
         points_colors = [POINTS_COLORS[i]] * len(new_points)
+
+        # Save the image of disparity to a separate file
+        plt.imsave(f'disparity_{c1}_{c2}.png', disparity)
 
         # Add points to the dense points cloud (with black color)
         points.extend(new_points)
@@ -218,7 +222,7 @@ def main():
 
     # Export the dense point cloud with black points
     cloud = np.array(points, dtype=np.float64).T
-    colors = np.zeros(cloud.shape())
+    colors = np.zeros(cloud.shape)
     g = ge.GePly('dense.ply')
     g.points(cloud,
              colors)
